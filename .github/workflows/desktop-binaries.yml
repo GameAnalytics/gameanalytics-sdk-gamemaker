@@ -1,0 +1,196 @@
+name: Desktop binaries
+
+# Builds the GameMaker extension's native library for every desktop target from
+# sample/extensions/GameAnalyticsExt/DesktopSource, so releases no longer depend
+# on someone having a Windows box, a Linux box and a Mac to hand.
+#
+# Each job produces exactly the file GameAnalyticsExt.yy expects:
+#   macos-universal  libGameAnalytics.dylib   (x86_64 + arm64)
+#   linux-x64        libGameAnalytics.so
+#   windows-x64      GameAnalytics_x64.dll
+#   windows-x86      GameAnalytics.dll
+#
+# Collect them with ./fetch_desktop_binaries.py, or by hand:
+#   gh run download <run-id> -n desktop-binaries -D sample/extensions/GameAnalyticsExt
+# and commit the four files.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sdk_ref:
+        description: "gameanalytics-sdk-cpp ref to build against"
+        required: true
+        # Pinned to the commit that builds the static library with -fPIC, which
+        # the Linux .so link needs. v5.4.1 predates it, so the tag will NOT
+        # work. Move this to a release tag once that change is merged.
+        default: "424a87d77c7d9cc9a686e0b2484f52005145e723"
+  pull_request:
+    paths:
+      - "sample/extensions/GameAnalyticsExt/DesktopSource/**"
+      - ".github/workflows/desktop-binaries.yml"
+  push:
+    branches: [master]
+    paths:
+      - "sample/extensions/GameAnalyticsExt/DesktopSource/**"
+      - ".github/workflows/desktop-binaries.yml"
+
+env:
+  # Used when the workflow is triggered by push/PR, where inputs are unset.
+  DEFAULT_SDK_REF: "424a87d77c7d9cc9a686e0b2484f52005145e723"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-universal
+            os: macos-14
+            artifact: libGameAnalytics.dylib
+          - name: linux-x64
+            # Deliberately not ubuntu-latest: the runner's glibc becomes the
+            # minimum glibc of every game shipping this library, so build
+            # against the oldest one still supported by Actions.
+            os: ubuntu-22.04
+            artifact: libGameAnalytics.so
+          - name: windows-x64
+            os: windows-2022
+            cmake_arch: x64
+            vcpkg_triplet: x64-windows-static-md
+            artifact: GameAnalytics_x64.dll
+          - name: windows-x86
+            os: windows-2022
+            cmake_arch: Win32
+            vcpkg_triplet: x86-windows-static-md
+            artifact: GameAnalytics.dll
+
+    steps:
+      - name: Check out the GameMaker SDK
+        uses: actions/checkout@v4
+
+      - name: Check out the C++ SDK
+        uses: actions/checkout@v4
+        with:
+          repository: GameAnalytics/gameanalytics-sdk-cpp
+          ref: ${{ github.event.inputs.sdk_ref || env.DEFAULT_SDK_REF }}
+          path: sdk-cpp
+          submodules: recursive
+
+      - name: Install zlib (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zlib1g-dev
+
+      # The SDK builds against the dynamic CRT, so zlib has to match: the
+      # -static-md triplet is a static lib linked against the dynamic runtime,
+      # which keeps the extension a single self-contained DLL.
+      - name: Install zlib (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install "zlib:${{ matrix.vcpkg_triplet }}"
+
+      - name: Configure
+        shell: bash
+        run: |
+          EXTRA=""
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            EXTRA="-A ${{ matrix.cmake_arch }}"
+            EXTRA="$EXTRA -DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+            EXTRA="$EXTRA -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }}"
+          fi
+          cmake -S sample/extensions/GameAnalyticsExt/DesktopSource -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGA_SDK_DIR="$PWD/sdk-cpp" \
+            $EXTRA
+
+      - name: Build
+        run: cmake --build build --config Release --target GameAnalyticsGM --parallel
+
+      # A library that loads but is missing an entry point fails silently at
+      # runtime — GameMaker resolves extension functions lazily — so check the
+      # export table here instead of finding out in a game.
+      - name: Verify exports (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          LIB="sample/extensions/GameAnalyticsExt/${{ matrix.artifact }}"
+          test -f "$LIB" || { echo "::error::$LIB was not produced"; exit 1; }
+
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            nm -gU "$LIB" | sed -n 's/.* T _//p' | sort -u > exports.txt
+          else
+            nm -D --defined-only "$LIB" | sed -n 's/.* T //p' | sort -u > exports.txt
+          fi
+
+          missing=""
+          while read -r fn; do
+            grep -qx "$fn" exports.txt || missing="$missing $fn"
+          done < .github/workflows/required-exports.txt
+
+          if [ -n "$missing" ]; then
+            echo "::error::missing entry points:$missing"
+            exit 1
+          fi
+          echo "all $(wc -l < .github/workflows/required-exports.txt) required entry points present"
+
+      - name: Verify exports (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $lib = "sample/extensions/GameAnalyticsExt/${{ matrix.artifact }}"
+          if (-not (Test-Path $lib)) { Write-Output "::error::$lib was not produced"; exit 1 }
+
+          # No nm on the runner; export names appear verbatim in the PE export
+          # table, so match them in the raw bytes.
+          $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($lib))
+          $required = Get-Content .github/workflows/required-exports.txt
+          $missing = $required | Where-Object { $text -notmatch "\b$_\b" }
+
+          if ($missing) { Write-Output "::error::missing entry points: $($missing -join ' ')"; exit 1 }
+          Write-Output "all $($required.Count) required entry points present"
+
+      - name: Report what was built
+        shell: bash
+        run: |
+          LIB="sample/extensions/GameAnalyticsExt/${{ matrix.artifact }}"
+          ls -l "$LIB"
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            lipo -info "$LIB"
+            echo "non-system dependencies (should be none):"
+            otool -L "$LIB" | tail -n +2 | grep -v "^\s*/System\|^\s*/usr/lib\|$(basename "$LIB")" || echo "  none"
+          elif [ "${{ runner.os }}" = "Linux" ]; then
+            echo "shared dependencies:"; ldd "$LIB" || true
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: sample/extensions/GameAnalyticsExt/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  collect:
+    name: desktop-binaries
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: staging
+
+      # One artifact holding all four libraries, laid out so it can be unzipped
+      # straight over sample/extensions/GameAnalyticsExt/.
+      - name: Flatten
+        run: |
+          mkdir -p desktop-binaries
+          find staging -type f -exec cp {} desktop-binaries/ \;
+          ls -l desktop-binaries
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-binaries
+          path: desktop-binaries/
+          if-no-files-found: error

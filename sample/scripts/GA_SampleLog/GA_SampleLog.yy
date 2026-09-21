@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"GA_SampleLog",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"GA_SampleLog",
+  "parent":{
+    "name":"sample",
+    "path":"sample.yyp",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

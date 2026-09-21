@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"GameAnalytics",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"GameAnalytics",
+  "parent":{
+    "name":"sample",
+    "path":"sample.yyp",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

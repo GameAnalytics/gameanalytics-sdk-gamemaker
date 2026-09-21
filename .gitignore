@@ -1,0 +1,99 @@
+#############################
+## Private / never publish
+#############################
+# Signing material. These belong in the internal repo or a secret store, never
+# here. Listed explicitly so an accidental copy from the development repo is
+# caught before it is committed.
+*.pem
+*.key
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.mobileprovision
+*.cer
+*.certSigningRequest
+google-services.json
+GoogleService-Info.plist
+
+# Internal release tooling and planning documents. The public SDK is built by
+# the workflow in .github/workflows; the publishing script that pushes to the
+# Marketplace and the sister repositories is not part of it.
+publish_gamemaker_release.py
+docs/release-readiness.md
+docs/superpowers/
+
+# Credentials the sample writes at runtime. The sample stores the game key and
+# secret you type into it in plain text under the game's save area; if that file
+# ever lands in the working tree it must not be committed.
+ga_sample.ini
+*.local
+.env
+.env.*
+
+#############################
+## GameMaker
+#############################
+# Build output and IDE state.
+/sample/datafiles_yy/
+*.yydebug
+*.yyz
+*.yymps
+cache/
+Temp/
+output/
+/builds/
+
+# Per-user project state, not shared settings.
+*.resource_order.bak
+.gm_cache/
+
+#############################
+## Native build output
+#############################
+# The desktop libraries are built by CI (see .github/workflows) and committed as
+# release artifacts; local build trees are not.
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+*.o
+*.obj
+*.lo
+*.slo
+*.exp
+*.ilk
+*.pdb
+
+# Windows/vcpkg
+vcpkg_installed/
+
+# The extension's shipped native libraries are release artifacts and must always
+# be tracked. Kept explicit so a future build-output rule cannot silently drop
+# one — an extension missing a library still loads, and only fails when a game
+# calls into it.
+!sample/extensions/GameAnalyticsExt/*.dll
+!sample/extensions/GameAnalyticsExt/*.dylib
+!sample/extensions/GameAnalyticsExt/*.so
+!sample/extensions/GameAnalyticsExt/*.js
+!sample/extensions/GameAnalyticsExt/iOSSource/GameAnalyticsSDK/*.a
+!sample/extensions/GameAnalyticsExt/AndroidSource/libs/*.jar
+
+#############################
+## Editors and OS
+#############################
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*~
+
+#############################
+## Python
+#############################
+__pycache__/
+*.py[cod]
+.venv/
+venv/
