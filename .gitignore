@@ -23,6 +23,15 @@ publish_gamemaker_release.py
 docs/release-readiness.md
 docs/superpowers/
 
+# Working notes and agent context. `internal/` is scratch space that never
+# ships; CLAUDE.md is the context file Claude Code loads on open. Both describe
+# how this repo relates to the internal development repo, so neither belongs in
+# a public tree.
+internal/
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+
 # Credentials the sample writes at runtime. The sample stores the game key and
 # secret you type into it in plain text under the game's save area; if that file
 # ever lands in the working tree it must not be committed.
