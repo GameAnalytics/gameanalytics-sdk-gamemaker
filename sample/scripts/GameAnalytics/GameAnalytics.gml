@@ -274,7 +274,7 @@ function __ga_http_autowire() {
 }
 
 function ga_initialize(gameKey, gameSecret) {
-    var _sdkVersion = "gamemaker 4.1.0";
+    var _sdkVersion = "gamemaker 5.0.0";
     if (os_browser != browser_not_a_browser) {
         ga_configure_sdk_version_html(_sdkVersion);
         ga_initialize_html(gameKey, gameSecret);

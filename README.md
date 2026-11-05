@@ -13,8 +13,7 @@ support team [here](https://gameanalytics.com/contact).
 |-------------|-----------------------------------------------------------|
 | Android     | `com.gameanalytics.sdk:gameanalytics-android` (via Gradle) |
 | iOS         | `libGameAnalytics.a`                                      |
-| Windows x86 | `GameAnalytics.dll`                                       |
-| Windows x64 | `GameAnalytics_x64.dll`                                   |
+| Windows x64 | `GameAnalytics.dll`                                       |
 | macOS       | `libGameAnalytics.dylib`                                  |
 | Linux x64   | `libGameAnalytics.so`                                     |
 | HTML5       | `GameAnalytics.js`                                        |
@@ -24,7 +23,7 @@ declares a Gradle dependency, so the Android SDK is fetched from
 `maven.gameanalytics.com` when your project builds.
 
 Not every call is implemented on every platform — see
-[Platform support](#platform-support) and [Known issues](#known-issues).
+[Platform support](#platform-support).
 
 ## Requirements
 
@@ -33,19 +32,23 @@ Not every call is implemented on every platform — see
 
 ## Installation
 
-The SDK is two resources inside the sample project:
+The SDK is three resources inside the sample project:
 
 - `sample/extensions/GameAnalyticsExt` — the extension: native libraries, the
   platform bridges and the function declarations.
 - `sample/scripts/GameAnalytics` — `GameAnalytics.gml`, the cross-platform GML
   API that dispatches to whichever backend the current platform uses.
+- `sample/objects/obj_gameanalytics` — drives the desktop HTTP bridge.
+  `ga_initialize()` creates it; you never reference it yourself.
 
-Copy both into your own project, or open `sample/sample.yyp`, select the two
-resources and use **Tools → Create Local Package** to make a `.yymps` you can
-import elsewhere.
+Copy all three into your own project, or open `sample/sample.yyp`, select them
+and use **Tools → Create Local Package** to make a `.yymps` you can import
+elsewhere.
 
-You need both. The script calls the extension's declared functions directly, so
-importing the extension on its own leaves you with raw per-platform bindings.
+The script calls the extension's declared functions directly, so importing the
+extension on its own leaves you with raw per-platform bindings. Leaving out
+`obj_gameanalytics` costs you desktop uploads — the SDK logs a message saying
+so at `ga_initialize()` rather than failing silently.
 
 ### Android
 
@@ -73,27 +76,6 @@ ga_on_quit();
 
 Your game key and secret are on your game's Settings page on
 [gameanalytics.com](https://gameanalytics.com).
-
-### Desktop: you must pump the HTTP client
-
-On desktop the native library routes its uploads through GameMaker's own
-`http_request` rather than linking cURL and OpenSSL. That needs driving from
-GML — **without these two calls nothing your game records is ever submitted**:
-
-```gml
-// Step event
-ga_http_pump();
-
-// Async HTTP event
-ga_http_handle_async();
-
-// Game End event, so shutdown doesn't wait out the request timeout
-ga_http_abort();
-```
-
-Both are no-ops on platforms whose native SDK does its own networking, so it is
-safe to call them unconditionally. `sample/objects/obj_controller` shows the
-wiring.
 
 ## API reference
 
@@ -214,11 +196,21 @@ ga_get_external_user_id()  // String
 
 ### Desktop HTTP bridge
 
+On desktop the native library routes its uploads through GameMaker's own
+`http_request` rather than linking cURL and OpenSSL, which needs an instance to
+receive the Async HTTP event. `ga_initialize()` creates `obj_gameanalytics` for
+that, so there is nothing to wire up.
+
 ```gml
 ga_http_pump()          // Step event
 ga_http_handle_async()  // Async HTTP event
 ga_http_abort()         // Game End event
 ```
+
+These stay public so a game can drive the bridge from its own object instead,
+for example to issue requests on a different schedule. Calling them as well as
+`obj_gameanalytics` is harmless: whichever comes first in a step claims the
+queued request and the other finds nothing.
 
 ## Platform support
 
@@ -230,12 +222,13 @@ supported everywhere.
 |----------|--------------|
 | `ga_add_ad_event`, `..._with_duration`, `..._with_reason` | Android, iOS, HTML5 |
 | `ga_set_error_reporting` | Windows, macOS, Linux |
-| `ga_configure_external_user_id` | Android, iOS, HTML5, macOS |
-| `ga_get_user_id`, `ga_get_external_user_id` | macOS |
-| `ga_http_pump`, `ga_http_handle_async`, `ga_http_abort` | macOS |
+| `ga_configure_external_user_id` | Android, iOS, HTML5, Windows, macOS, Linux |
+| `ga_get_user_id`, `ga_get_external_user_id` | Windows, macOS, Linux |
+| `ga_http_pump`, `ga_http_handle_async`, `ga_http_abort` (optional) | Windows, macOS, Linux |
 
-The macOS-only rows are a consequence of [Known issues](#known-issues) — they
-extend to Windows and Linux as soon as those libraries are rebuilt.
+The last three are desktop-only by design: they exist because the desktop
+extension routes the SDK's HTTP through GameMaker rather than linking cURL, and
+the mobile and HTML5 SDKs do their own networking.
 
 ## Sample app
 
@@ -288,25 +281,27 @@ Two source files:
 - **`GameAnalyticsHttpGM.cpp`** — a `GAHttpClient` that performs the SDK's
   requests with GameMaker's own HTTP stack. This is what removes the cURL and
   OpenSSL dependency and gives one implementation for every desktop target. It
-  is why `ga_http_pump()` and `ga_http_handle_async()` exist.
+  is why `ga_http_pump()` and `ga_http_handle_async()` exist, and why
+  `obj_gameanalytics` is created by `ga_initialize()` — GameMaker delivers
+  `async_load` only to instances that define the event, so the bridge cannot
+  live in a script or a time source.
 
   | Where | What |
   |-------|------|
   | SDK worker thread | `sendRequest()` queues the request and blocks |
-  | Game thread, per step | `ga_http_pump()` issues it via `http_request` |
-  | Async HTTP event | `ga_http_handle_async()` returns status and body to the SDK |
-  | Game end | `ga_http_abort()` so shutdown doesn't wait out the timeout |
+  | `obj_gameanalytics`, per step | `ga_http_pump()` issues it via `http_request` |
+  | `obj_gameanalytics`, Async HTTP | `ga_http_handle_async()` returns status and body to the SDK |
+  | `obj_gameanalytics`, Game End | `ga_http_abort()` so shutdown doesn't wait out the timeout |
 
 ### CI
 
-`.github/workflows/desktop-binaries.yml` builds all four desktop libraries:
+`.github/workflows/desktop-binaries.yml` builds every desktop library:
 
 | Job | Runner | Produces |
 |-----|--------|----------|
 | `macos-universal` | macos-14 | `libGameAnalytics.dylib` (x86_64 + arm64) |
 | `linux-x64` | ubuntu-22.04 | `libGameAnalytics.so` |
-| `windows-x64` | windows-2022 | `GameAnalytics_x64.dll` |
-| `windows-x86` | windows-2022 | `GameAnalytics.dll` |
+| `windows-x64` | windows-2022 | `GameAnalytics.dll` |
 
 Each job checks the export table before uploading
 (`.github/workflows/required-exports.txt`), because GameMaker resolves extension
@@ -329,29 +324,71 @@ Two things the workflow pins deliberately:
 - **ubuntu-22.04, not ubuntu-latest.** The runner's glibc becomes the minimum
   glibc of every game that ships this library.
 
-## Known issues
+### Upstream SDK versions
 
-**The Windows and Linux libraries have not been rebuilt yet.**
-`GameAnalytics.dll`, `GameAnalytics_x64.dll` and `libGameAnalytics.so` are still
-the February 2022 builds, which contain an out-of-bounds read in the
-`add*EventJson` entry points that can crash the game. macOS has been rebuilt and
-is not affected. The cause, the reproduction and the fix are written up in
-[docs/native-json-event-bindings-off-by-one.md](docs/native-json-event-bindings-off-by-one.md).
+Each platform target binds to a different GameAnalytics SDK.
+`dependencies.json` records which version of each one the shipped artifacts came
+from, and `./download_externals.py` brings the tree back in line with it — bump
+a version there to upgrade.
 
-Until those libraries are replaced, on Windows and Linux:
+| Dependency | Version | Where it lands |
+|------------|---------|----------------|
+| `GA-SDK-CPP` | 5.4.1 (a later commit, see above) | `external/gameanalytics-sdk-cpp`, the source tree `DesktopSource` builds |
+| `GA-SDK-JAVASCRIPT` | 4.4.5 | `GameAnalytics.js`, a drop-in replacement |
+| `GA-SDK-IOS` | 4.6.10 | `iOSSource/GameAnalyticsSDK/libGameAnalytics.a` |
+| `GA-SDK-ANDROID` | 7.0.1 | a Maven coordinate in `GameAnalyticsExt.yy`, resolved by Gradle |
 
-- `ga_add_business_event`, `ga_add_resource_event` and
-  `ga_add_progression_event_with_score` can crash the game. The crash depends on
-  heap state, so it is intermittent — a call that works at startup can fail
-  later in the same session.
-- `ga_http_pump()` and friends are inert, because the old libraries do their own
-  networking and do not export the entry points the bridge needs.
-- `ga_get_user_id()`, `ga_get_external_user_id()` and
-  `ga_configure_external_user_id()` are unavailable for the same reason.
+```bash
+./download_externals.py                    # every dependency
+./download_externals.py GA-SDK-JAVASCRIPT  # just one
+```
 
-Design events, error events, custom dimensions, sessions and remote configs go
-through bindings whose declared signature matches the shipped binary and are
-unaffected.
+The first two are fetched. The last two are reported on instead: the iOS
+releases publish no static library (5.x ships an `.xcframework`, which the
+extension's `.yy` would have to be reworked for), and the Android version is a
+coordinate rather than a file — the script checks that coordinate against the
+manifest and leaves the IDE-managed `.yy` alone.
+
+### Releasing
+
+`./publish_release.py` does the mechanical half of a release:
+
+```bash
+./publish_release.py -v 4.2.0 -c "first line::second line"
+./publish_release.py -v 4.2.0 -c "..." --dry-run   # report every step, change nothing
+```
+
+In order, it refreshes the upstream dependencies, rebuilds the desktop
+libraries on CI and collects them, checks every shipped artifact is present,
+bumps both version strings, asks the backend whether it accepts the new
+`sdk_version`, prepends the changelog entry, zips the extension and the GML
+wrapper, then commits, tags and creates the GitHub release.
+
+The two Marketplace steps have no API and stay manual; the script prints them
+when it finishes.
+
+It deliberately does **not** download the old prebuilt libraries from
+`download.gameanalytics.com` the way the previous script did. Those are the
+February 2022 builds, which carry an out-of-bounds read in the `add*EventJson`
+entry points; taking them again would reintroduce that crash.
+
+The backend check needs a game key and secret, which are read from a file that
+is never committed — `internal/` is gitignored, and the script refuses to run if
+the file has somehow become tracked:
+
+```bash
+./publish_release.py --init-credentials   # writes internal/release-credentials.env, mode 600
+```
+
+```
+GA_GAME_KEY=...
+GA_GAME_SECRET=...
+```
+
+It is used for one thing: `_sdkVersion` identifies this SDK in every event a
+game sends, and a version string the backend rejects is invisible until the data
+stops arriving. Without the file the check is skipped; the values are never
+printed.
 
 ## Contributing
 
