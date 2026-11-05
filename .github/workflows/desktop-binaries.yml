@@ -7,8 +7,12 @@ name: Desktop binaries
 # Each job produces exactly the file GameAnalyticsExt.yy expects:
 #   macos-universal  libGameAnalytics.dylib   (x86_64 + arm64)
 #   linux-x64        libGameAnalytics.so
-#   windows-x64      GameAnalytics_x64.dll
-#   windows-x86      GameAnalytics.dll
+#   windows-x64      GameAnalytics.dll        (64-bit)
+#
+# 32-bit Windows was dropped: it never built (the DLL's import library
+# collided with the C++ SDK's GameAnalytics.lib, LNK1149) and GameMaker's
+# Windows target is x64. The extension declares one Windows library, named
+# GameAnalytics.dll, and this is it.
 #
 # Collect them with ./fetch_desktop_binaries.py, or by hand:
 #   gh run download <run-id> -n desktop-binaries -D sample/extensions/GameAnalyticsExt
@@ -18,12 +22,9 @@ on:
   workflow_dispatch:
     inputs:
       sdk_ref:
-        description: "gameanalytics-sdk-cpp ref to build against"
-        required: true
-        # Pinned to the commit that builds the static library with -fPIC, which
-        # the Linux .so link needs. v5.4.1 predates it, so the tag will NOT
-        # work. Move this to a release tag once that change is merged.
-        default: "424a87d77c7d9cc9a686e0b2484f52005145e723"
+        description: "override the gameanalytics-sdk-cpp ref (default: dependencies.json)"
+        required: false
+        default: ""
   pull_request:
     paths:
       - "sample/extensions/GameAnalyticsExt/DesktopSource/**"
@@ -34,12 +35,43 @@ on:
       - "sample/extensions/GameAnalyticsExt/DesktopSource/**"
       - ".github/workflows/desktop-binaries.yml"
 
-env:
-  # Used when the workflow is triggered by push/PR, where inputs are unset.
-  DEFAULT_SDK_REF: "424a87d77c7d9cc9a686e0b2484f52005145e723"
-
 jobs:
+  # The ref lives in dependencies.json so that CI, the local build and
+  # ./download_externals.py cannot disagree about which C++ SDK is being built.
+  # It is resolved once here rather than in each matrix job, so every
+  # library is guaranteed to come from the same source revision.
+  dependency:
+    name: resolve C++ SDK ref
+    runs-on: ubuntu-latest
+    outputs:
+      sdk_ref: ${{ steps.resolve.outputs.sdk_ref }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the pinned ref
+        id: resolve
+        shell: bash
+        run: |
+          OVERRIDE="${{ github.event.inputs.sdk_ref }}"
+          if [ -n "$OVERRIDE" ]; then
+            REF="$OVERRIDE"
+            ORIGIN="workflow_dispatch input"
+          else
+            # A 'ref' in dependencies.json wins over 'version': the tag
+            # v5.4.1 builds the static library without -fPIC and the Linux .so
+            # then fails to link, so the pin is currently a commit past it.
+            REF=$(python3 -c 'import json; d=json.load(open("dependencies.json")); c=next(x for x in d if x["name"]=="GA-SDK-CPP"); print(c.get("ref") or "v"+c["version"])')
+            ORIGIN="dependencies.json"
+          fi
+          if [ -z "$REF" ]; then
+            echo "::error::could not determine a GA-SDK-CPP ref"
+            exit 1
+          fi
+          echo "sdk_ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "Building against gameanalytics-sdk-cpp $REF (from $ORIGIN)"
+
   build:
+    needs: dependency
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -59,11 +91,6 @@ jobs:
             os: windows-2022
             cmake_arch: x64
             vcpkg_triplet: x64-windows-static-md
-            artifact: GameAnalytics_x64.dll
-          - name: windows-x86
-            os: windows-2022
-            cmake_arch: Win32
-            vcpkg_triplet: x86-windows-static-md
             artifact: GameAnalytics.dll
 
     steps:
@@ -74,7 +101,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: GameAnalytics/gameanalytics-sdk-cpp
-          ref: ${{ github.event.inputs.sdk_ref || env.DEFAULT_SDK_REF }}
+          ref: ${{ needs.dependency.outputs.sdk_ref }}
           path: sdk-cpp
           submodules: recursive
 
@@ -181,8 +208,8 @@ jobs:
         with:
           path: staging
 
-      # One artifact holding all four libraries, laid out so it can be unzipped
-      # straight over sample/extensions/GameAnalyticsExt/.
+      # One artifact holding all three libraries, laid out so it can be
+      # unzipped straight over sample/extensions/GameAnalyticsExt/.
       - name: Flatten
         run: |
           mkdir -p desktop-binaries

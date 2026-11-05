@@ -16,7 +16,7 @@
 # Output name matches what GameAnalyticsExt.yy expects per platform:
 #   macOS   libGameAnalytics.dylib   (universal x86_64 + arm64)
 #   Linux   libGameAnalytics.so
-#   Windows GameAnalytics_x64.dll / GameAnalytics.dll (32-bit build)
+#   Windows GameAnalytics.dll         (64-bit)
 
 cmake_minimum_required(VERSION 3.16)
 
@@ -90,11 +90,21 @@ elseif(UNIX)
     set_target_properties(GameAnalyticsGM PROPERTIES
         OUTPUT_NAME "GameAnalytics" PREFIX "lib" SUFFIX ".so")
 elseif(WIN32)
-    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-        set_target_properties(GameAnalyticsGM PROPERTIES OUTPUT_NAME "GameAnalytics_x64")
-    else()
-        set_target_properties(GameAnalyticsGM PROPERTIES OUTPUT_NAME "GameAnalytics")
+    # 64-bit only. 32-bit Windows was dropped: GameMaker's Windows target is
+    # x64, and the extension declares exactly one Windows library.
+    if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+        message(FATAL_ERROR
+            "32-bit Windows is not supported — configure with -A x64")
     endif()
+
+    # GameAnalyticsExt.yy declares this library as GameAnalytics.dll, and the
+    # C++ SDK's static library is GameAnalytics.lib. On MSVC the DLL's import
+    # library would claim that same name and path, and the linker refuses it
+    # (LNK1149), so the import library — a build artifact that is never
+    # shipped — is given a different name.
+    set_target_properties(GameAnalyticsGM PROPERTIES
+        RUNTIME_OUTPUT_NAME "GameAnalytics"
+        ARCHIVE_OUTPUT_NAME "GameAnalyticsGM")
 endif()
 
 # Drop the built library straight into the extension folder.

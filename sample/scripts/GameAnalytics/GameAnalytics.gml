@@ -135,7 +135,8 @@ function ga_configure_external_user_id(extUserId) {
         case os_android: ga_configure_external_user_id_android(extUserId); break;
         case os_ios:     ga_configure_external_user_id_ios(extUserId);     break;
         case os_macosx:  configureExternalUserId_mac(extUserId);     break;
-        // windows/linux: available once their binaries are rebuilt
+        case os_windows: configureExternalUserId_windows(extUserId); break;
+        case os_linux:   configureExternalUserId_linux(extUserId);   break;
         default: __ga_unsupported("ga_configure_external_user_id"); break;
     }
 }
@@ -232,6 +233,46 @@ function ga_configure_resource_item_types(types) {
 /// @func ga_initialize(gameKey, gameSecret)
 /// @param {String} gameKey
 /// @param {String} gameSecret
+/// @func __ga_http_autowire()
+/// @desc Creates the instance that drives the desktop HTTP bridge, so a game
+///       does not have to wire ga_http_pump / ga_http_handle_async /
+///       ga_http_abort into an object of its own.
+///
+///       The Async HTTP event is the reason this needs an object at all:
+///       GameMaker delivers async_load only to instances that define the
+///       event, so a script or a time source cannot receive it.
+///
+///       Looked up by name rather than referenced directly, so the SDK scripts
+///       still compile if obj_gameanalytics was not imported alongside them.
+function __ga_http_autowire() {
+    if (!__ga_http_uses_gm_stack()) return true;
+
+    var _obj = asset_get_index("obj_gameanalytics");
+    if (_obj == -1) {
+        show_debug_message(
+            "[GameAnalytics] obj_gameanalytics is missing, so nothing will be "
+            + "uploaded on desktop. Import it alongside the GameAnalytics "
+            + "scripts, or call ga_http_pump/ga_http_handle_async/ga_http_abort "
+            + "from an object of your own.");
+        return false;
+    }
+
+    if (instance_exists(_obj)) return true;
+
+    // instance_create_depth needs a room to be running, which means
+    // ga_initialize must be called from a Create or Room Start event.
+    if (!room_exists(room)) {
+        show_debug_message(
+            "[GameAnalytics] ga_initialize was called before a room was "
+            + "running, so the HTTP bridge could not start. Call it from a "
+            + "Create or Room Start event.");
+        return false;
+    }
+
+    instance_create_depth(0, 0, 0, _obj);
+    return true;
+}
+
 function ga_initialize(gameKey, gameSecret) {
     var _sdkVersion = "gamemaker 4.1.0";
     if (os_browser != browser_not_a_browser) {
@@ -260,6 +301,11 @@ function ga_initialize(gameKey, gameSecret) {
                 native_ga_initialize_linux(gameKey, gameSecret);
                 break;
         }
+
+        // Desktop uploads go through GameMaker's HTTP, which needs an instance
+        // to receive the Async HTTP event. Started here so the game does not
+        // have to.
+        __ga_http_autowire();
     }
 }
 
@@ -670,25 +716,25 @@ function __ga_http_uses_gm_stack() {
     if (os_browser != browser_not_a_browser) return false;
     switch (os_type) {
         case os_macosx:
+        case os_windows:
+        case os_linux:
             return true;
-
-        // case os_windows:
-        // case os_linux:
-        //     Enable these once GameAnalytics.dll / GameAnalytics_x64.dll /
-        //     libGameAnalytics.so have been rebuilt from DesktopSource. The
-        //     binaries currently shipped for those targets predate this client
-        //     and do their own HTTP, and they do not export the gaHttp* entry
-        //     points, so calling them would fail at runtime.
     }
     return false;
 }
 
 /// @func ga_http_pump()
 /// @desc Issues whatever request the SDK has queued, using GameMaker's own HTTP
-///       stack. Call once per step from an object that also implements the
-///       Async HTTP event (see ga_http_handle_async) — without it, nothing the
-///       SDK records is ever submitted. Harmless no-op on platforms whose
-///       native SDK does its own networking.
+///       stack.
+///
+///       You do not need to call this: ga_initialize() starts
+///       obj_gameanalytics, which does it once per step. It stays public so a
+///       game can drive the bridge itself — calling it as well is harmless,
+///       because whichever caller comes first in a step claims the queued
+///       request and the other finds nothing.
+///
+///       Harmless no-op on platforms whose native SDK does its own
+///       networking.
 function ga_http_pump() {
     if (!__ga_http_uses_gm_stack()) return -1;
 
@@ -733,6 +779,8 @@ function ga_http_pump() {
 }
 
 /// @func ga_http_handle_async()
+/// @desc You do not need to call this: obj_gameanalytics handles it. Still
+///       public so a game can host the Async HTTP event itself.
 /// @desc Call from the Async HTTP event. Passes the response for the SDK's
 ///       in-flight request back to the SDK and leaves the game's own HTTP
 ///       traffic alone.
@@ -783,6 +831,8 @@ function __ga_http_deliver(status, body) {
 }
 
 /// @func ga_http_abort()
+/// @desc You do not need to call this: obj_gameanalytics calls it at Game End.
+///       Still public so a game can shut the bridge down itself.
 /// @desc Fails the in-flight request instead of letting the SDK's worker thread
 ///       wait out its timeout. Call on game end, before ga_on_quit().
 function ga_http_abort() {
@@ -801,13 +851,14 @@ function ga_http_abort() {
 /// @func ga_get_user_id()
 /// @desc The id the SDK is actually sending events under - the one configured
 ///       via ga_configure_user_id, or the device id it generated itself.
-///       Only the rebuilt desktop binaries expose this; "" elsewhere.
+///       Bound on Windows, macOS and Linux; "" elsewhere.
 /// @return {String}
 function ga_get_user_id() {
     if (os_browser != browser_not_a_browser) return "";
     switch (os_type) {
-        case os_macosx: return getUserId_mac();
-        // windows/linux: available once their binaries are rebuilt
+        case os_macosx:  return getUserId_mac();
+        case os_windows: return getUserId_windows();
+        case os_linux:   return getUserId_linux();
     }
     return "";
 }
@@ -817,8 +868,9 @@ function ga_get_user_id() {
 function ga_get_external_user_id() {
     if (os_browser != browser_not_a_browser) return "";
     switch (os_type) {
-        case os_macosx: return getExternalUserId_mac();
-        // windows/linux: available once their binaries are rebuilt
+        case os_macosx:  return getExternalUserId_mac();
+        case os_windows: return getExternalUserId_windows();
+        case os_linux:   return getExternalUserId_linux();
     }
     return "";
 }

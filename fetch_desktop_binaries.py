@@ -4,7 +4,7 @@
 The extension's native libraries are built in CI (see
 .github/workflows/desktop-binaries.yml) because releasing them otherwise needs a
 Windows box, a Linux box and a Mac. This pulls the result of a run and drops the
-four libraries into both GameMaker projects.
+libraries into the extension.
 
     ./fetch_desktop_binaries.py                  # latest successful run on this branch
     ./fetch_desktop_binaries.py --branch master
@@ -46,7 +46,6 @@ EXPECTED_FILES = [
     "libGameAnalytics.dylib",
     "libGameAnalytics.so",
     "GameAnalytics.dll",
-    "GameAnalytics_x64.dll",
 ]
 
 
@@ -182,7 +181,7 @@ def main():
     parser.add_argument("--token", help="GitHub token (else $GITHUB_TOKEN, else `gh auth token`)")
     parser.add_argument("--dest", action="append",
                         help="extension directory to install into (repeatable; "
-                             "default: both GameMaker projects)")
+                             "default: the extension under sample/)")
     parser.add_argument("--list", action="store_true", help="list recent runs and exit")
     parser.add_argument("--dry-run", action="store_true", help="report without writing files")
     parser.add_argument("--allow-partial", action="store_true",
