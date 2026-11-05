@@ -16,17 +16,21 @@
 google-services.json
 GoogleService-Info.plist
 
-# Internal release tooling and planning documents. The public SDK is built by
-# the workflow in .github/workflows; the publishing script that pushes to the
-# Marketplace and the sister repositories is not part of it.
+# Internal release tooling and planning documents. The publishing script that
+# pushed to the Marketplace and the sister repositories belonged to the
+# development repo; ./publish_release.py replaces it here.
 publish_gamemaker_release.py
+
+# Unpublished write-ups. These now live in internal/docs/, which the rule below
+# already covers — kept as explicit guards so a `docs/` directory reappearing
+# at the root cannot pull them into the public tree.
 docs/release-readiness.md
 docs/superpowers/
 
 # Working notes and agent context. `internal/` is scratch space that never
-# ships; CLAUDE.md is the context file Claude Code loads on open. Both describe
-# how this repo relates to the internal development repo, so neither belongs in
-# a public tree.
+# ships and holds the repo-wide Claude Code context, the binding checker, the
+# unpublished write-ups and the release credentials. The bare CLAUDE.md entries
+# stay so that a copy reappearing at the root is ignored too.
 internal/
 CLAUDE.md
 CLAUDE.local.md
@@ -76,6 +80,12 @@ CMakeFiles/
 
 # Windows/vcpkg
 vcpkg_installed/
+
+# Upstream SDK sources fetched by ./download_externals.py. A checkout of
+# another repository, at the version dependencies.json pins — not ours to
+# track. Scoped to this one directory rather than a pattern, so it cannot
+# catch a shipped library.
+/external/
 
 # The extension's shipped native libraries are release artifacts and must always
 # be tracked. Kept explicit so a future build-output rule cannot silently drop

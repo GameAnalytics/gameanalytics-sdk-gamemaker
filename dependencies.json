@@ -1,0 +1,23 @@
+[
+    {
+        "name": "GA-SDK-CPP",
+        "version": "5.4.1",
+        "ref": "424a87d77c7d9cc9a686e0b2484f52005145e723",
+        "url": "https://github.com/GameAnalytics/gameanalytics-sdk-cpp/"
+    },
+    {
+        "name": "GA-SDK-JAVASCRIPT",
+        "version": "4.4.5",
+        "url": "https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT/"
+    },
+    {
+        "name": "GA-SDK-IOS",
+        "version": "4.6.10",
+        "url": "https://github.com/GameAnalytics/GA-SDK-IOS/"
+    },
+    {
+        "name": "GA-SDK-ANDROID",
+        "version": "7.0.1",
+        "url": "https://github.com/GameAnalytics/GA-SDK-ANDROID/"
+    }
+]
