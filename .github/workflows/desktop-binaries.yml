@@ -16,7 +16,7 @@ name: Desktop binaries
 #
 # Collect them with ./fetch_desktop_binaries.py, or by hand:
 #   gh run download <run-id> -n desktop-binaries -D sample/extensions/GameAnalyticsExt
-# and commit the four files.
+# and commit the three files.
 
 on:
   workflow_dispatch:
@@ -79,7 +79,11 @@ jobs:
       matrix:
         include:
           - name: macos-universal
-            os: macos-14
+            # Pinned like the others, but unlike Linux the pin is not what sets
+            # the compatibility floor - CMAKE_OSX_DEPLOYMENT_TARGET does - so
+            # when an image retires (macOS 14 did, 2 November 2026) bumping this
+            # to the next supported arm64 label is all that is needed.
+            os: macos-15
             artifact: libGameAnalytics.dylib
           - name: linux-x64
             # Deliberately not ubuntu-latest: the runner's glibc becomes the
