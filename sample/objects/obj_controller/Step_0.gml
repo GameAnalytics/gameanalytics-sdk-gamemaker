@@ -39,10 +39,6 @@ if (!global.__ga_info.initialized) {
     }
 }
 
-// Desktop routes the SDK's HTTP through GameMaker, so its queued requests are
-// issued from here and answered in the Async HTTP event.
-ga_http_pump();
-
 ga_sample_ui_fade_flashes();
 
 refresh_countdown--;

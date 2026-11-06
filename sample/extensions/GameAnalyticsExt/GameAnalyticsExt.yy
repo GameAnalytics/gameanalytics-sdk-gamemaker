@@ -17,7 +17,7 @@
   "copyToTargets":35184372089070,
   "description":"",
   "exportToGame":true,
-  "extensionVersion":"4.1.0",
+  "extensionVersion":"5.0.0",
   "files":[
     {"$GMExtensionFile":"v1","%Name":"","constants":[],"copyToTargets":32,"filename":"GameAnalytics.js","final":"","functions":[],"init":"","kind":5,"name":"","origname":"","ProxyFiles":[],"resourceType":"GMExtensionFile","resourceVersion":"2.0","uncompress":false,"usesRunnerInterface":false,},
     {"$GMExtensionFile":"v1","%Name":"","constants":[],"copyToTargets":35184372089070,"filename":"GameAnalyticsExt.ext","final":"","functions":[],"init":"","kind":4,"name":"","origname":"","ProxyFiles":[],"resourceType":"GMExtensionFile","resourceVersion":"2.0","uncompress":false,"usesRunnerInterface":false,},
